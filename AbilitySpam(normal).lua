@@ -1,7 +1,7 @@
 -- ==========================================
 -- AbilitySpam.lua | Standalone Module
--- Загружается через loadstring в хаб
--- После загрузки: getgenv().AbilitySpamSystem
+-- Load via loadstring from your hub
+-- After load: getgenv().AbilitySpamSystem
 -- ==========================================
 
 local Players         = game:GetService("Players")
@@ -9,7 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace       = game:GetService("Workspace")
 local LP              = Players.LocalPlayer
 
--- Remotes (берём из getgenv хаба, или сами находим)
+-- Remotes (grab from hub getgenv, or find manually)
 local Remotes = getgenv().Remotes or {}
 if not Remotes.ChangeCharacter then
     local rem = ReplicatedStorage:FindFirstChild("Remotes")
@@ -18,7 +18,7 @@ if not Remotes.ChangeCharacter then
     end
 end
 
--- ---- Хелперы ----
+-- ---- Helpers ----
 local function getCharValue()
     local d = LP:FindFirstChild("Data")
     return d and d:FindFirstChild("Character") and d.Character.Value
@@ -256,7 +256,7 @@ function AbilitySpamSystem:Stop()
     AbilitySpam_StopRespawnListener()
 end
 
--- ---- Экспорт в глобальный env ----
+-- ---- Export to global env ----
 getgenv().AbilitySpamSystem          = AbilitySpamSystem
 getgenv().AbilitySpamInstantRespawn  = AbilitySpamInstantRespawn
 getgenv().AbilitySpam_StartRespawnListener = AbilitySpam_StartRespawnListener
