@@ -1,12 +1,12 @@
 -- ==========================================
 -- NPCAbilitySpam.lua | Standalone Module
--- Загружается через loadstring в хаб
--- ТРЕБУЕТ: AbilitySpam.lua загружен первым
--- После загрузки: getgenv().NPCAbilitySpam
+-- Load via loadstring from your hub
+-- REQUIRES: AbilitySpam.lua loaded first
+-- After load: getgenv().NPCAbilitySpam
 -- ==========================================
--- Два потока одновременно:
---   Thread 1 — WallCombo пулл NPC (сервер-сайд, как tearphy god mode)
---   Thread 2 — Ability 4 спам на NPC
+-- Two threads simultaneously:
+--   Thread 1 — WallCombo pull on NPC (server-side, same as tearphy god mode)
+--   Thread 2 — Ability 4 spam on NPC
 -- ==========================================
 
 local Players           = game:GetService("Players")
@@ -14,14 +14,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
 local LP                = Players.LocalPlayer
 
--- ---- Берём из env если AbilitySpam.lua уже загружен ----
+-- ---- Grab from env if AbilitySpam.lua is already loaded ----
 local AbilitySpamSystem = getgenv().AbilitySpamSystem
 if not AbilitySpamSystem then
     AbilitySpamSystem = { SwitchToMob = function() end }
-    warn("[NPCAbilitySpam] AbilitySpam.lua не загружен — SwitchToMob недоступен!")
+    warn("[NPCAbilitySpam] AbilitySpam.lua not loaded — SwitchToMob unavailable!")
 end
 
--- ---- Хелперы ----
+-- ---- Helpers ----
 local function findAllNPCs()
     local list  = {}
     local chars = workspace:FindFirstChild("Characters")
@@ -57,8 +57,8 @@ local NPCAbilitySpam = {
     enabled        = false,
     pullThread     = nil,
     attackThread   = nil,
-    pullInterval   = 0.15,   -- скорость WallCombo
-    attackInterval = 0.3,    -- скорость Ability 4
+    pullInterval   = 0.15,   -- WallCombo fire rate
+    attackInterval = 0.3,    -- Ability 4 spam speed
 }
 
 function NPCAbilitySpam:FindNearest()
@@ -179,7 +179,7 @@ function NPCAbilitySpam:Start()
     self.enabled = true
     AbilitySpamSystem:SwitchToMob()
 
-    -- Thread 1: WallCombo пулл
+    -- Thread 1: WallCombo pull
     self.pullThread = task.spawn(function()
         while self.enabled do
             local npc = NPCAbilitySpam:FindNearest()
@@ -190,7 +190,7 @@ function NPCAbilitySpam:Start()
         end
     end)
 
-    -- Thread 2: Ability 4 спам
+    -- Thread 2: Ability 4 spam
     self.attackThread = task.spawn(function()
         while self.enabled do
             local npc   = NPCAbilitySpam:FindNearest()
@@ -203,7 +203,7 @@ function NPCAbilitySpam:Start()
                     pcall(function() NPCAbilitySpam:FireAbility4(nHRP.CFrame, npc) end)
                 end
             elseif myHRP then
-                -- Нет NPC — стреляем в пустоту перед собой
+                -- No NPC — fire into empty space in front
                 local emptyCF = myHRP.CFrame * CFrame.new(0, 0, -5)
                 pcall(function() NPCAbilitySpam:FireAbility4(emptyCF, nil) end)
             end
@@ -223,6 +223,6 @@ function NPCAbilitySpam:Stop()
     end)
 end
 
--- ---- Экспорт ----
+-- ---- Export ----
 getgenv().NPCAbilitySpam = NPCAbilitySpam
 print("[NPCAbilitySpam] Loaded OK — getgenv().NPCAbilitySpam ready")
