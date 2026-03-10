@@ -4,24 +4,21 @@
 -- After load: getgenv().AbilitySpamSystem
 -- ==========================================
 
-local Players         = game:GetService("Players")
+local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace       = game:GetService("Workspace")
-local LP              = Players.LocalPlayer
-
--- Remotes (grab from hub getgenv, or find manually)
-local Remotes = getgenv().Remotes or {}
-if not Remotes.ChangeCharacter then
-    local rem = ReplicatedStorage:FindFirstChild("Remotes")
-    if rem then
-        Remotes.ChangeCharacter = rem:FindFirstChild("Character") and rem.Character:FindFirstChild("ChangeCharacter")
-    end
-end
+local RunService        = game:GetService("RunService")
+local LP                = Players.LocalPlayer
 
 -- ---- Helpers ----
 local function getCharValue()
     local d = LP:FindFirstChild("Data")
     return d and d:FindFirstChild("Character") and d.Character.Value
+end
+
+local function getChangeCharRemote()
+    local rem = ReplicatedStorage:FindFirstChild("Remotes")
+    local ch  = rem and rem:FindFirstChild("Character")
+    return ch and ch:FindFirstChild("ChangeCharacter")
 end
 
 local function isKATarget(player)
@@ -32,68 +29,86 @@ local function isKATarget(player)
     return true
 end
 
--- ---- Instant Respawn ----
-local AbilitySpamInstantRespawn = { savedCFrame = nil, connections = {} }
+-- ==========================================
+-- Instant Respawn
+-- ==========================================
+local InstantRespawn = { savedCFrame = nil, connections = {} }
 
-local function AbilitySpam_KillPlayer(char)
+local function killChar(char)
     local ok = pcall(function()
         if type(replicatesignal) == "function" and LP.Kill then
             replicatesignal(LP.Kill)
-        else error() end
+        else
+            error("no replicatesignal")
+        end
     end)
     if not ok then
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) else char:BreakJoints() end
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Dead)
+        else
+            char:BreakJoints()
+        end
     end
 end
 
-local function AbilitySpam_SetupRespawn(char)
+local function setupRespawn(char)
     if not char then return end
-    if AbilitySpamInstantRespawn.savedCFrame then
+    if InstantRespawn.savedCFrame then
         task.spawn(function()
             local hrp = char:WaitForChild("HumanoidRootPart", 5)
             if not hrp then return end
             task.wait(0.1)
             for i = 1, 10 do
-                if hrp then hrp.CFrame = AbilitySpamInstantRespawn.savedCFrame end
+                hrp.CFrame = InstantRespawn.savedCFrame
                 task.wait(0.05)
             end
-            AbilitySpamInstantRespawn.savedCFrame = nil
+            InstantRespawn.savedCFrame = nil
         end)
     end
-    local hum = char:WaitForChild("Humanoid", 3)
-    if not hum then return end
-    local conn
-    conn = hum:GetAttributeChangedSignal("Health"):Connect(function()
-        local h = hum:GetAttribute("Health") or hum.Health
-        if h <= 0 then
+    -- Use Heartbeat instead of GetAttributeChangedSignal for compatibility
+    local lastHP = 100
+    local conn = RunService.Heartbeat:Connect(function()
+        if not char or not char.Parent then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        local hp = hum:GetAttribute("Health") or hum.Health or 0
+        if hp <= 0 and lastHP > 0 then
             local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then AbilitySpamInstantRespawn.savedCFrame = hrp.CFrame end
-            AbilitySpam_KillPlayer(char)
+            if hrp then InstantRespawn.savedCFrame = hrp.CFrame end
+            killChar(char)
         end
+        lastHP = hp
     end)
-    table.insert(AbilitySpamInstantRespawn.connections, conn)
+    table.insert(InstantRespawn.connections, conn)
 end
 
-local function AbilitySpam_StartRespawnListener()
-    for _, c in ipairs(AbilitySpamInstantRespawn.connections) do if c then c:Disconnect() end end
-    AbilitySpamInstantRespawn.connections = {}
-    if LP.Character then AbilitySpam_SetupRespawn(LP.Character) end
-    table.insert(AbilitySpamInstantRespawn.connections, LP.CharacterAdded:Connect(AbilitySpam_SetupRespawn))
+local function startRespawnListener()
+    for _, c in ipairs(InstantRespawn.connections) do
+        if c then pcall(function() c:Disconnect() end) end
+    end
+    InstantRespawn.connections = {}
+    if LP.Character then setupRespawn(LP.Character) end
+    table.insert(InstantRespawn.connections,
+        LP.CharacterAdded:Connect(setupRespawn))
 end
 
-local function AbilitySpam_StopRespawnListener()
-    for _, c in ipairs(AbilitySpamInstantRespawn.connections) do if c then c:Disconnect() end end
-    AbilitySpamInstantRespawn.connections = {}
-    AbilitySpamInstantRespawn.savedCFrame = nil
+local function stopRespawnListener()
+    for _, c in ipairs(InstantRespawn.connections) do
+        if c then pcall(function() c:Disconnect() end) end
+    end
+    InstantRespawn.connections = {}
+    InstantRespawn.savedCFrame = nil
 end
 
--- ---- AbilitySpamSystem ----
+-- ==========================================
+-- AbilitySpamSystem
+-- ==========================================
 local AbilitySpamSystem = {
-    enabled          = false,
-    connection       = nil,
-    selectedAbility  = "4",
-    spamSpeed        = 0.5,
+    enabled         = false,
+    connection      = nil,
+    selectedAbility = "4",
+    spamSpeed       = 0.5,
     abilityData = {
         ["1"] = { id = 328194,  actions = {59,  60,  61,  62,  63,  64,  65}  },
         ["2"] = { id = 671300,  actions = {303, 304, 305, 306, 307, 308, 309} },
@@ -105,34 +120,28 @@ local AbilitySpamSystem = {
 function AbilitySpamSystem:SwitchToMob()
     if getCharValue() == "Mob" then return end
     local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp then AbilitySpamInstantRespawn.savedCFrame = hrp.CFrame end
-    AbilitySpam_StartRespawnListener()
-    if Remotes.ChangeCharacter then
-        pcall(function() Remotes.ChangeCharacter:FireServer("Mob") end)
-    else
-        local rem = ReplicatedStorage:FindFirstChild("Remotes")
-        local ch = rem and rem:FindFirstChild("Character")
-        local r = ch and ch:FindFirstChild("ChangeCharacter")
-        if r then pcall(function() r:FireServer("Mob") end) end
-    end
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then InstantRespawn.savedCFrame = hrp.CFrame end
+    startRespawnListener()
+    local remote = getChangeCharRemote()
+    if remote then pcall(function() remote:FireServer("Mob") end) end
     task.wait(0.5)
 end
 
 function AbilitySpamSystem:FindNearestPlayer()
     local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
-    local nearest, dist = nil, math.huge
+    local nearest, best = nil, math.huge
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LP and isKATarget(p) and p.Character then
             local tr = p.Character:FindFirstChild("HumanoidRootPart")
-            local th = p.Character:FindFirstChild("Humanoid")
-            if tr and th then
-                local hp = th:GetAttribute("Health")
-                if hp and hp > 0 then
+            local hm = p.Character:FindFirstChild("Humanoid")
+            if tr and hm then
+                local hp = hm:GetAttribute("Health") or hm.Health or 0
+                if hp > 0 then
                     local d = (hrp.Position - tr.Position).Magnitude
-                    if d < dist then dist = d; nearest = p end
+                    if d < best then best = d; nearest = p end
                 end
             end
         end
@@ -140,37 +149,46 @@ function AbilitySpamSystem:FindNearestPlayer()
     return nearest
 end
 
-function AbilitySpamSystem:GetNearestPlayerCFrame()
+function AbilitySpamSystem:GetNearestCFrame()
     local p = self:FindNearestPlayer()
-    return p and p.Character and p.Character.HumanoidRootPart
-        and p.Character.HumanoidRootPart.CFrame or CFrame.new()
+    if p and p.Character then
+        local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then return hrp.CFrame end
+    end
+    return CFrame.new()
 end
 
 function AbilitySpamSystem:UseAbility(abilityNum)
     pcall(function()
-        local abilityObj = ReplicatedStorage.Characters.Mob.Abilities:FindFirstChild(tostring(abilityNum))
-        if not abilityObj then return end
+        local chars = ReplicatedStorage:FindFirstChild("Characters")
+        local mob   = chars and chars:FindFirstChild("Mob")
+        local abs   = mob and mob:FindFirstChild("Abilities")
+        local obj   = abs and abs:FindFirstChild(tostring(abilityNum))
+        if not obj then return end
+
         local target = self:FindNearestPlayer()
         if not target then return end
+
         local targetChar = target.Character
-        local targetCF   = self:GetNearestPlayerCFrame()
-        local data = self.abilityData[tostring(abilityNum)]
+        local targetCF   = self:GetNearestCFrame()
+        local data       = self.abilityData[tostring(abilityNum)]
         if not data then return end
 
-        ReplicatedStorage.Remotes.Abilities.Ability:FireServer(abilityObj, data.id)
+        ReplicatedStorage.Remotes.Abilities.Ability:FireServer(obj, data.id)
 
         for i = 1, 7 do
             local args = {
-                abilityObj,
+                obj,
                 "Mob:Abilities:"..tostring(abilityNum),
-                i, data.id,
+                i,
+                data.id,
                 {
-                    HitboxCFrames  = {targetCF, targetCF},
+                    HitboxCFrames    = {targetCF, targetCF},
                     BestHitCharacter = targetChar,
-                    HitCharacters  = {targetChar},
-                    Ignore         = i > 2 and {ActionNumber1 = {targetChar}} or {},
-                    DeathInfo      = {},
-                    BlockedCharacters = {},
+                    HitCharacters    = {targetChar},
+                    Ignore           = i > 2 and {ActionNumber1 = {targetChar}} or {},
+                    DeathInfo        = {},
+                    BlockedCharacters= {},
                     HitInfo = {
                         IsFacing  = not (i == 1 or i == 2),
                         IsInFront = i <= 2,
@@ -183,12 +201,13 @@ function AbilitySpamSystem:UseAbility(abilityNum)
                 "Action"..data.actions[i],
                 i == 2 and 0.1 or nil
             }
+
             if i == 7 then
                 args[5].RockCFrame = targetCF
                 args[5].Actions = {
                     ActionNumber1 = {
                         [target.Name] = {
-                            StartCFrameStr = tostring(targetCF.X)..","..tostring(targetCF.Y)..","..tostring(targetCF.Z)..",0,0,0,0,0,0,0,0,0",
+                            StartCFrameStr     = tostring(targetCF.X)..","..tostring(targetCF.Y)..","..tostring(targetCF.Z)..",0,0,0,0,0,0,0,0,0",
                             ImpulseVelocity    = Vector3.new(1901, -25000, 291),
                             AbilityName        = tostring(abilityNum),
                             RotVelocityStr     = "0,0,0",
@@ -201,6 +220,7 @@ function AbilitySpamSystem:UseAbility(abilityNum)
                     }
                 }
             end
+
             ReplicatedStorage.Remotes.Combat.Action:FireServer(unpack(args))
         end
     end)
@@ -208,8 +228,13 @@ end
 
 function AbilitySpamSystem:CancelAbility(abilityNum)
     pcall(function()
-        local obj = ReplicatedStorage.Characters.Mob.Abilities:FindFirstChild(tostring(abilityNum))
-        if obj then ReplicatedStorage.Remotes.Abilities.AbilityCanceled:FireServer(obj) end
+        local chars = ReplicatedStorage:FindFirstChild("Characters")
+        local mob   = chars and chars:FindFirstChild("Mob")
+        local abs   = mob and mob:FindFirstChild("Abilities")
+        local obj   = abs and abs:FindFirstChild(tostring(abilityNum))
+        if obj then
+            ReplicatedStorage.Remotes.Abilities.AbilityCanceled:FireServer(obj)
+        end
     end)
 end
 
@@ -253,13 +278,13 @@ function AbilitySpamSystem:Stop()
         self.connection = nil
     end
     self.enabled = false
-    AbilitySpam_StopRespawnListener()
+    stopRespawnListener()
 end
 
 -- ---- Export to global env ----
-getgenv().AbilitySpamSystem          = AbilitySpamSystem
-getgenv().AbilitySpamInstantRespawn  = AbilitySpamInstantRespawn
-getgenv().AbilitySpam_StartRespawnListener = AbilitySpam_StartRespawnListener
-getgenv().AbilitySpam_StopRespawnListener  = AbilitySpam_StopRespawnListener
+getgenv().AbilitySpamSystem                = AbilitySpamSystem
+getgenv().AbilitySpam_InstantRespawn       = InstantRespawn
+getgenv().AbilitySpam_StartRespawnListener = startRespawnListener
+getgenv().AbilitySpam_StopRespawnListener  = stopRespawnListener
 
-print("[AbilitySpam] Loaded OK — getgenv().AbilitySpamSystem ready")
+print("[AbilitySpam] Loaded OK")
